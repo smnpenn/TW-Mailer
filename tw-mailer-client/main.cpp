@@ -6,7 +6,6 @@
 #include <arpa/inet.h>
 #include <vector>
 #include <sstream>
-#include <cstring>
 
 #define PORT 8080
 
