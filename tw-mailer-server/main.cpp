@@ -78,6 +78,8 @@ int main(int argc, char *argv[])
         for(auto const &tokens : messageTokens){
             cout << tokens << endl;
         }
+        message.clear();
+        messageTokens.clear();
     }
 
     return 0;

@@ -96,6 +96,8 @@ int main(int argc, char *argv[])
         }
         cout << "Sent message" << endl;
 
+        message.clear();
+
 
     }
 
