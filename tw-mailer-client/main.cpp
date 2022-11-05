@@ -80,10 +80,6 @@ int main(int argc, char *argv[])
 
         messageTokens = splitInputMessage(message);
 
-        for(auto const &token: messageTokens){
-            cout << token << endl;
-        }
-
         if(messageTokens[1] == "SEND"){ // maybe um die Modes zu checken -> wird wsh eh nicht gebraucht.
             cout << "MODE: SENDING" << endl;
         } else if(messageTokens[1] == "LIST"){
@@ -99,6 +95,7 @@ int main(int argc, char *argv[])
             return errno;
         }
         cout << "Sent message" << endl;
+
 
     }
 
