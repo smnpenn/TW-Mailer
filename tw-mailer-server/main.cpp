@@ -58,6 +58,7 @@ void messageToFile(string message, filesystem::path path){
 
 string listMessagesFromUser(filesystem::path userDir){
     string msgList = "";
+    int id = 1;
     for (auto const &dir_entry : filesystem::directory_iterator(userDir))
     {
         string name = filesystem::path(dir_entry).filename();
@@ -70,8 +71,8 @@ string listMessagesFromUser(filesystem::path userDir){
             for(int i=0;i<3;++i){
                 getline(current_file, subject);
             }
-            msgList.append(subject + "\n");
-            
+            msgList.append(name.substr(0,1) + ": " + subject + "\n");
+            ++id;
         }       
     }
 
@@ -237,12 +238,6 @@ int main(int argc, char *argv[])
                 cout << "ERR" << endl;
                 send(new_socket, error.data(), error.size(), 0);
             }else{
-                cout << "SEND" << endl;
-                cout << "Sender: " << username << endl;
-                cout << "Receiver: " << messageTokens[2] << endl;
-                cout << "Subject: " << messageTokens[3] << endl;
-                cout << "Message:" << messageTokens[4] << endl;
-
                 string msgWithoutHeaders = username + "\n" + messageTokens[2] + "\n" + messageTokens[3] + "\n";
                 for(unsigned int i=4;i<messageTokens.size();++i){
                     msgWithoutHeaders.append(messageTokens[i]);

@@ -72,7 +72,6 @@ int main(int argc, char *argv[])
     
     while(true){
         cout << "Enter username: " << endl;
-        //TODO: nur a-z, 0-9 erlaubt
 
         do{
             cin >> userstr;
@@ -81,9 +80,6 @@ int main(int argc, char *argv[])
                 cout << "Username should only contain a-z and 0-9" << endl;
             }
         }while(!checkStringValidity(userstr));
-
-
-
 
         if(userstr.length()>8){
             cout << "Username is too long (max 8 character)" << endl;
@@ -132,6 +128,11 @@ int main(int argc, char *argv[])
         do{
             getline(cin, message, '.');
             messageTokens = splitInputMessage(message);
+
+            if(messageTokens[1] == "QUIT"){
+                break;
+            }
+
             if(messageTokens[2] == userstr && messageTokens[1] == "SEND"){
                 message.clear();
                 messageTokens.erase(messageTokens.begin()+2);
@@ -141,7 +142,7 @@ int main(int argc, char *argv[])
 
         } while(messageTokens[2] != userstr);
 
-        if(messageTokens[1] == "SEND" && messageTokens.size() < 6){ // maybe um die Modes zu checken -> wird wsh eh nicht gebraucht.
+        if(messageTokens[1] == "SEND" && messageTokens.size() < 6){ 
             sendMessageToServer(sock, message);
         }else if(messageTokens[1] == "LIST" && messageTokens.size() < 4){
             sendMessageToServer(sock, message);
@@ -157,13 +158,13 @@ int main(int argc, char *argv[])
             shutdown(sock, SHUT_WR);
             exit(0);
             break;
-        } else if((messageTokens[1] == "READ")&&messageTokens.size() < 5){
+        } else if((messageTokens[1] == "READ") && messageTokens.size() < 5){
             sendMessageToServer(sock, message);
             n = recv(sock, buffer, sizeof(buffer), 0);
             response.append(buffer, buffer+n);
             cout << response << endl;
             response.clear();
-        } else if((messageTokens[1] == "DEL")&&messageTokens.size() < 5) {
+        } else if((messageTokens[1] == "DEL") && messageTokens.size() < 5) {
             sendMessageToServer(sock, message);
             n = recv(sock, buffer, sizeof(buffer), 0);
             response.append(buffer, buffer+n);
