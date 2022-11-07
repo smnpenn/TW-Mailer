@@ -153,7 +153,7 @@ int main(int argc, char *argv[])
             response.append(buffer, buffer+n);
             cout << response << endl;
             response.clear();
-        }else if(messageTokens[1] == "QUIT"){ // Bugged?
+        }else if(messageTokens[1] == "QUIT"){
             cout << "QUITTING" << endl;
             shutdown(sock, SHUT_WR);
             exit(0);
