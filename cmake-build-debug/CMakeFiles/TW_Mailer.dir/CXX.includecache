@@ -1,0 +1,26 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/maxturza/Dokumente/c_dev/TW-Mailer/tw-mailer-client/main.cpp
+iostream
+-
+unistd.h
+-
+string
+-
+algorithm
+-
+sys/socket.h
+-
+arpa/inet.h
+-
+vector
+-
+sstream
+-
+

@@ -81,6 +81,72 @@ string listMessagesFromUser(filesystem::path userDir){
         return msgList;
 }
 
+bool deleteMessageFromUser(filesystem::path userDir, string id){
+    id = id + ".txt";
+    bool deleted = false;
+    for(auto const &dir_entry : filesystem::directory_iterator(userDir)){
+        string name = filesystem::path(dir_entry).filename();
+        if(name == id){
+            if(filesystem::remove(dir_entry) == 0){
+                deleted = true;
+                break;
+            }
+        }
+    }
+    return deleted;
+}
+
+string readMessageFromUser(filesystem::path userDir, string id){
+    int init = 0;
+    string res = "";
+    bool found = false;
+    id = id + ".txt";
+    for(auto const &dir_entry : filesystem::directory_iterator(userDir))
+    {
+        string name = filesystem::path(dir_entry).filename();
+        if(name == id) {
+            ifstream current_file(userDir / name);
+            found = true;
+            if (current_file.is_open()) {
+                string text;
+                while (getline(current_file, text)) {
+                    switch (init) {
+                        case 0:
+                            res.append("Sender: " + text + "\n");
+                            init++;
+                            break;
+                        case 1:
+                            res.append("Receiver: " + text + "\n");
+                            init++;
+                            break;
+                        case 2:
+                            res.append("Subject: " + text + "\n");
+                            init++;
+                            break;
+                        case 3:
+                            res.append("Message:  " + text + "\n");
+                            init++;
+                            break;
+                        default:
+                            break;
+                    }
+                }
+            } else {
+                cout << "couldnt open file" << endl;
+                res = "ERR: couldn't open file";
+            }
+        }
+    }
+    if (found) {}
+    else {
+        cout << " message not found" << endl;
+        res = "ERR: message not found";
+    }
+    cout << res << endl;
+    return res;
+
+}
+
 int main(int argc, char *argv[])
 {
     if(argc<3){
@@ -167,43 +233,68 @@ int main(int argc, char *argv[])
 
         if(messageTokens[1] == "SEND"){
             if(messageTokens.size() < 5){
+                string error = "ERR\n";
                 cout << "ERR" << endl;
+                send(new_socket, error.data(), error.size(), 0);
             }else{
                 cout << "SEND" << endl;
                 cout << "Sender: " << username << endl;
                 cout << "Receiver: " << messageTokens[2] << endl;
                 cout << "Subject: " << messageTokens[3] << endl;
-                cout << "Message:" << endl;
+                cout << "Message:" << messageTokens[4] << endl;
 
                 string msgWithoutHeaders = username + "\n" + messageTokens[2] + "\n" + messageTokens[3] + "\n";
                 for(unsigned int i=4;i<messageTokens.size();++i){
-                    cout << messageTokens[i] << endl;
                     msgWithoutHeaders.append(messageTokens[i]);
                 }
-
                 messageToFile(msgWithoutHeaders, mailspool_userDir);
                 cout << "OK" << endl;
+                string ok = "OK\n";
+                send(new_socket, ok.data(), ok.size(), 0);
             }
             
         }
         else if(messageTokens[1] == "LIST"){
-            cout << "LIST" << endl;
-            
             string msgList = listMessagesFromUser(mailspool_path / messageTokens[2]);
+            cout << " ------------------- " << endl;
+            cout << "SUBJECT LIST" << endl;
             cout << msgList << endl;
             if(send(new_socket, msgList.data(), msgList.size(), 0) < 0){
-                perror("Error sending msgList");
+                string error = "ERR\n";
+                send(new_socket, error.data(), error.size(), 0);
+                perror("ERR: Sending message list");
                 //return errno;
             }else{
                 cout << "Sent to client!" << endl;
             }
+
         }
         else if(messageTokens[1] == "DEL"){
             cout << "DEL" << endl;
+            if(!deleteMessageFromUser(mailspool_path / messageTokens[2], messageTokens[3])){
+                string ok = "OK\n";
+                send(new_socket, ok.data(), ok.size(), 0);
+                cout << "Sent to client!" << endl;
+            } else {
+                string error = "ERR\n";
+                send(new_socket, error.data(), error.size(), 0);
+                perror("Error deleting msg!");
+            }
+
             //delete message with given id from given user
         }else if(messageTokens[1] == "READ"){
             cout << "READ" << endl;
             //read message with given id from given user
+            string readMsg = readMessageFromUser(mailspool_path / messageTokens[2], messageTokens[3]);
+            if(send(new_socket, readMsg.data(), readMsg.size(), 0) < 0){
+                string error = "ERR\n";
+                send(new_socket, error.data(), error.size(), 0);
+                perror("Error sending readMsg!");
+            } else {
+                string ok = "OK\n";
+                send(new_socket, ok.data(), ok.size(), 0);
+                cout << "Sent to client!" << endl;
+            }
         }
 
         message.clear();

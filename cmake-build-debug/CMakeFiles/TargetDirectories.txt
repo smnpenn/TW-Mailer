@@ -1,0 +1,3 @@
+/home/maxturza/Dokumente/c_dev/TW-Mailer/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/home/maxturza/Dokumente/c_dev/TW-Mailer/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/maxturza/Dokumente/c_dev/TW-Mailer/cmake-build-debug/CMakeFiles/TW_Mailer.dir
