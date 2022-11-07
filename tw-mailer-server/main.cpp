@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <filesystem>
 #include <fstream>
+#include <cstring>
 
 #define MAXLINE 1500
 #define PORT 8080
@@ -27,54 +28,32 @@ vector<string> splitInputMessage(const string& string){
     return tokens;
 }
 
-// static ssize_t
-// my_read (int fd, char *ptr)
-// {
-//     static int read_cnt = 0 ;
-//     static char *read_ptr ;
-//     static char read_buf[MAXLINE] ;
-//     if (read_cnt <= 0) {
-//         again:
-//         if ( (read_cnt = read(fd,read_buf,sizeof(read_buf))) < 0) {
-//             if (errno == EINTR)
-//                 goto again ;
-//             return (-1);
-//         } else if (read_cnt == 0)
-//             return (0);
-//         read_ptr = read_buf;
-//     };
-
-//     read_cnt--;
-//     *ptr = *read_ptr++;
-//     return (1);
-// }
-// ssize_t readline (int fd, void *vptr, size_t maxlen)
-// {
-//     ssize_t n, rc;
-//     char c, *ptr;
-//     ptr = vptr;
-//     for (n = 1 ; n < maxlen ; n++) {
-//         if ( (rc = my_read(fd,&c)) == 1 ) {
-//             *ptr++ = c;
-//             if (c == '\n')
-//                 break ; // newline is stored
-//         } else if (rc == 0) {
-//             if (n == 1)
-//                 return (0); // EOF, no data read
-//             else
-//                 break; // EOF, some data was read
-//         } else
-//             return (-1); // error, errno set by read() in my_read()
-//     };
-//     *ptr = 0; // null terminate
-//     return (n);
-// } 
-
-
 void messageToFile(string message, filesystem::path path){
-    fstream myFile(path / "current_id.txt");
-    myFile << "1";
+    ifstream current_id(path / "current_id.txt"); //, ios_base::in | ios_base::out
+    string id_str;
 
+    if(current_id.is_open()){
+        getline(current_id, id_str);
+        current_id.close();
+        int nextid = atoi(id_str.c_str())+1;
+        id_str = id_str + ".txt";
+        ofstream messageFile(path / id_str);
+        if(messageFile.is_open()){
+            messageFile << message;
+            messageFile.close();
+            ofstream current_idof(path / "current_id.txt");
+            if(current_idof.is_open()){
+                current_idof << nextid;
+                current_idof.close();
+            }
+            
+        }else{
+            cout << "Error opening id file" << endl;
+        }
+        
+    }else{
+        cout << "Error opening file" << endl;
+    }
 }
 
 int main(int argc, char *argv[])
@@ -145,23 +124,57 @@ int main(int argc, char *argv[])
 
     if(!filesystem::exists(mailspool_userDir)){
         filesystem::create_directory(mailspool_userDir);
-        
-    }
 
+        ofstream myFile(mailspool_userDir / "current_id.txt");
+        if(myFile.is_open()){
+            myFile << "1";
+            myFile.close();
+        }else{
+            cout << "ERR: opening file" << endl;
+            return -1;
+        } 
+    }
+    
     // Function to read incoming message
     while((n=recv(new_socket, buffer, sizeof(buffer), 0))>0){
         message.append(buffer, buffer+n);
-        messageToFile(message, mailspool_userDir);
         messageTokens = splitInputMessage(message);
 
-        for(auto const &tokens : messageTokens){
-            cout << tokens << endl;
+        if(messageTokens[1] == "SEND"){
+            if(messageTokens.size() < 5){
+                cout << "ERR" << endl;
+            }else{
+                cout << "SEND" << endl;
+                cout << "Sender: " << username << endl;
+                cout << "Receiver: " << messageTokens[2] << endl;
+                cout << "Subject: " << messageTokens[3] << endl;
+                cout << "Message:" << endl;
+
+                for(unsigned int i=4;i<messageTokens.size();++i){
+                    cout << messageTokens[i] << endl;
+                }
+                messageToFile(message, mailspool_userDir);
+                cout << "OK" << endl;
+                //store to File
+            }
+            
+        }
+        else if(messageTokens[1] == "LIST"){
+            cout << "LIST" << endl;
+            //list files
+        }
+        else if(messageTokens[1] == "DEL"){
+            cout << "DEL" << endl;
+            //delete message with given id
         }
 
         //messageToFile(message, mailspool_userDir);
         message.clear();
         messageTokens.clear();
     }
+
+    cout << username << " disconnected!" << endl;
+    shutdown(new_socket, SHUT_WR);
 
     return 0;
 }

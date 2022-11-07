@@ -29,6 +29,12 @@ void sendMessageToServer(int sock, string message){
         cout << "Sent message" << endl;
 }
 
+bool checkSenderReceiverLength(vector<string> messageTokens){
+    if((messageTokens[2].length() > 8) || (messageTokens[3].length() > 8))
+        return false;
+    else
+        return true;
+}
 
 int main(int argc, char *argv[])
 {
@@ -37,7 +43,8 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    char username[8];
+    //char username[8];
+    string userstr;
     //int n = 0;
     char* server_ip = argv[1];
     int server_port = atoi(argv[2]);
@@ -46,12 +53,21 @@ int main(int argc, char *argv[])
     
     cout << "Chosen ip adrress and port: " << server_ip << " : " << server_port << endl;
     
-    cout << "Enter username: " << endl;
+    while(true){
+        cout << "Enter username: " << endl;
+        //TODO: nur a-z, 0-9 erlaubt
+        
+        cin >> userstr;
+
+        if(userstr.length()>8){
+            cout << "Username is too long (max 8 character)" << endl;
+        }else{
+            break;
+        }
+    }
     
-    cin >> username;
-    
-    cout << "Chosen username " << username << endl;
-    
+    cout << "Chosen username " << userstr << endl;
+
     // ---------- SOCKET CREATION -----------
     
     int sock = 0, client_fd;
@@ -80,39 +96,30 @@ int main(int argc, char *argv[])
 
     //send username
     string username_str;
-    sendMessageToServer(sock, username_str.assign(username, username+8));
+    sendMessageToServer(sock, userstr);
 
     while(true){
         vector<string> messageTokens;
-
         string message;
 
         getline(cin, message, '.');
 
-        /*messageTokens = splitInputMessage(message);
+        messageTokens = splitInputMessage(message);
 
-        if(messageTokens[1] == "SEND"){ // maybe um die Modes zu checken -> wird wsh eh nicht gebraucht.
+        /*if(messageTokens[1] == "SEND"){ // maybe um die Modes zu checken -> wird wsh eh nicht gebraucht.
             cout << "MODE: SENDING" << endl;
         } else if(messageTokens[1] == "LIST"){
             cout << "MODE: LISTING" << endl;
-        } else if(messageTokens[1] == "QUIT"){
+        */
+
+        if(messageTokens[1] == "QUIT"){
             cout << "QUITTING" << endl;
-            break;
-        }*/
+            shutdown(sock, SHUT_WR);
+        }
 
         sendMessageToServer(sock, message);
 
         message.clear();
     }
-
-
-
-
-
-
-
-
-
-
 
 }
