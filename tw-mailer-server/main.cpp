@@ -56,6 +56,31 @@ void messageToFile(string message, filesystem::path path){
     }
 }
 
+string listMessagesFromUser(filesystem::path userDir){
+    string msgList = "";
+    for (auto const &dir_entry : filesystem::directory_iterator(userDir))
+    {
+        string name = filesystem::path(dir_entry).filename();
+        if(name == "current_id.txt")
+            continue;
+        ifstream current_file(userDir / name);
+        if(current_file.is_open()){
+            string subject;
+            
+            for(int i=0;i<3;++i){
+                getline(current_file, subject);
+            }
+            msgList.append(subject + "\n");
+            
+        }       
+    }
+
+    if(msgList == "")
+        return "empty";
+    else
+        return msgList;
+}
+
 int main(int argc, char *argv[])
 {
     if(argc<3){
@@ -150,25 +175,37 @@ int main(int argc, char *argv[])
                 cout << "Subject: " << messageTokens[3] << endl;
                 cout << "Message:" << endl;
 
+                string msgWithoutHeaders = username + "\n" + messageTokens[2] + "\n" + messageTokens[3] + "\n";
                 for(unsigned int i=4;i<messageTokens.size();++i){
                     cout << messageTokens[i] << endl;
+                    msgWithoutHeaders.append(messageTokens[i]);
                 }
-                messageToFile(message, mailspool_userDir);
+
+                messageToFile(msgWithoutHeaders, mailspool_userDir);
                 cout << "OK" << endl;
-                //store to File
             }
             
         }
         else if(messageTokens[1] == "LIST"){
             cout << "LIST" << endl;
-            //list files
+            
+            string msgList = listMessagesFromUser(mailspool_path / messageTokens[2]);
+            cout << msgList << endl;
+            if(send(new_socket, msgList.data(), msgList.size(), 0) < 0){
+                perror("Error sending msgList");
+                //return errno;
+            }else{
+                cout << "Sent to client!" << endl;
+            }
         }
         else if(messageTokens[1] == "DEL"){
             cout << "DEL" << endl;
-            //delete message with given id
+            //delete message with given id from given user
+        }else if(messageTokens[1] == "READ"){
+            cout << "READ" << endl;
+            //read message with given id from given user
         }
 
-        //messageToFile(message, mailspool_userDir);
         message.clear();
         messageTokens.clear();
     }

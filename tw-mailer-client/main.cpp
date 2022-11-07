@@ -22,11 +22,12 @@ vector<string> splitInputMessage(const string& string){
 }
 
 void sendMessageToServer(int sock, string message){
-        if(send(sock, message.data(), message.size(), 0) < 0){
-            perror("Server error");
-            //return errno;
-        }
-        cout << "Sent message" << endl;
+    if(send(sock, message.data(), message.size(), 0) < 0){
+        perror("Server error");
+        //return errno;
+    }else{
+        cout << "Sent to server!" << endl;
+    }
 }
 
 bool checkSenderReceiverLength(vector<string> messageTokens){
@@ -45,9 +46,10 @@ int main(int argc, char *argv[])
 
     //char username[8];
     string userstr;
-    //int n = 0;
+    int n = 0;
     char* server_ip = argv[1];
     int server_port = atoi(argv[2]);
+    char buffer[1024];
 
     // Usage ./twmailer-client <ip> <port>
     
@@ -97,6 +99,7 @@ int main(int argc, char *argv[])
     //send username
     string username_str;
     sendMessageToServer(sock, userstr);
+    string response;
 
     while(true){
         vector<string> messageTokens;
@@ -106,18 +109,19 @@ int main(int argc, char *argv[])
 
         messageTokens = splitInputMessage(message);
 
-        /*if(messageTokens[1] == "SEND"){ // maybe um die Modes zu checken -> wird wsh eh nicht gebraucht.
-            cout << "MODE: SENDING" << endl;
+        if(messageTokens[1] == "SEND"){ // maybe um die Modes zu checken -> wird wsh eh nicht gebraucht.
+            sendMessageToServer(sock, message);
         } else if(messageTokens[1] == "LIST"){
-            cout << "MODE: LISTING" << endl;
-        */
-
-        if(messageTokens[1] == "QUIT"){
+            sendMessageToServer(sock, message);
+            n = recv(sock, buffer, sizeof(buffer), 0);
+            response.append(buffer, buffer+n);
+            cout << response << endl;
+        }else if(messageTokens[1] == "QUIT"){
             cout << "QUITTING" << endl;
             shutdown(sock, SHUT_WR);
         }
 
-        sendMessageToServer(sock, message);
+        cout << endl;
 
         message.clear();
     }
