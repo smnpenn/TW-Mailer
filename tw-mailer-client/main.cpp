@@ -11,16 +11,6 @@
 
 using namespace std;
 
-vector<string> splitInputMessage(const string& string){
-    std::vector<std::string> tokens;
-    stringstream stream(string);
-    std::string token;
-    while(std::getline(stream, token, '\n')){
-        tokens.push_back(token);
-    }
-    return tokens;
-}
-
 static inline bool isNotAlphaNumeric(char c)
 {
     return !(isalnum(c));
@@ -38,18 +28,6 @@ void SendMessageToServer(int sock, string message){
     }
 }
 
-bool checkSenderReceiverLength(vector<string> messageTokens){
-    if((messageTokens[2].length() > 8) || (messageTokens[3].length() > 8))
-        return false;
-    else
-        return true;
-}
-
-string convertVectorToString(const vector<string>& v){
-    string s;
-    for(const auto &token : v) s += token + "\n";
-    return s;
-}
 
 string GetServerResponse(int sock){
     string response = "";
@@ -256,67 +234,4 @@ int main(int argc, char *argv[])
 
         operation.clear();
     }
-
-    /*while(true){
-        vector<string> messageTokens;
-        string message;
-
-        do{
-            getline(cin, message, '.');
-            messageTokens = splitInputMessage(message);
-
-            if(messageTokens[1] == "QUIT"){
-                break;
-            }
-
-            if(messageTokens[2] == userstr && messageTokens[1] == "SEND"){
-                message.clear();
-                messageTokens.erase(messageTokens.begin()+2);
-                message = convertVectorToString(messageTokens);
-                break;
-            }
-
-        } while(messageTokens[2] != userstr);
-
-        getline(cin, message, '.');
-        messageTokens = splitInputMessage(message);
-
-        if(messageTokens[1] == "SEND" && messageTokens.size() < 6){ 
-            sendMessageToServer(sock, message);
-
-        }else if(messageTokens[1] == "LIST" && messageTokens.size() < 4){
-            sendMessageToServer(sock, message);
-            cout << " ------------------- " << endl;
-            cout << "SUBJECT LIST" << endl;
-            cout << " ------------------- " << endl;
-            string response = "";
-            n = recv(sock, buffer, sizeof(buffer), 0);
-            response.append(buffer, buffer+n);
-            cout << response << endl;
-            response.clear();
-        }else if(messageTokens[1] == "QUIT"){
-            cout << "QUITTING" << endl;
-            shutdown(sock, SHUT_WR);
-            exit(0);
-            break;
-        } else if((messageTokens[1] == "READ") && messageTokens.size() < 5){
-            sendMessageToServer(sock, message);
-            string response = "";
-            n = recv(sock, buffer, sizeof(buffer), 0);
-            response.append(buffer, buffer+n);
-            cout << response << endl;
-            response.clear();
-        } else if((messageTokens[1] == "DEL") && messageTokens.size() < 5) {
-            sendMessageToServer(sock, message);
-            string response = "";
-            n = recv(sock, buffer, sizeof(buffer), 0);
-            response.append(buffer, buffer+n);
-            cout << response << endl;
-            response.clear();
-
-        }
-        cout << endl;
-        message.clear();
-    }*/
-
 }
