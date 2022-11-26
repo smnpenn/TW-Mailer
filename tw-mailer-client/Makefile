@@ -4,7 +4,7 @@
 all: client
 
 client: main.cpp
-	gcc main.cpp -lstdc++ -Wall -o tw-mailer-client
+	g++ -std=c++17 -Wall -Werror -o tw-mailer-client main.cpp
 
 clean:
 	rm -f tw-mailer-client

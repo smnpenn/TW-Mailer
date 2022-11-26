@@ -18,17 +18,23 @@
 
 using namespace std;
 
-vector<string> splitInputMessage(const string& string){
-    std::vector<std::string> tokens;
-    std::stringstream stream(string);
-    std::string token;
-    while(std::getline(stream, token, '\n')){
-        tokens.push_back(token);
+int CreateUserDir(string username, filesystem::path mailspool_userDir){
+
+    if(!filesystem::exists(mailspool_userDir)){
+        filesystem::create_directory(mailspool_userDir);
+
+        ofstream myFile(mailspool_userDir / "current_id.txt");
+        if(myFile.is_open()){
+            myFile << "1";
+            myFile.close();
+        }else{
+            return -1;
+        } 
     }
-    return tokens;
+    return 0;
 }
 
-void messageToFile(string message, filesystem::path path){
+string messageToFile(string message, filesystem::path path){
     ifstream current_id(path / "current_id.txt"); //, ios_base::in | ios_base::out
     string id_str;
 
@@ -48,17 +54,79 @@ void messageToFile(string message, filesystem::path path){
             }
             
         }else{
-            cout << "Error opening id file" << endl;
+            return "ERR";
         }
         
     }else{
-        cout << "Error opening file" << endl;
+        return "ERR";
     }
+
+    return "OK";
 }
 
-string listMessagesFromUser(filesystem::path userDir){
-    string msgList = "";
+string ReadMsg(int socket){
+    int n = 0;
+    char buffer[1024];
+    string message = "";
+
+    n = recv(socket, buffer, sizeof(buffer), 0);
+    message.append(buffer, buffer+n);
+
+    return message;
+}
+
+void sendOK(int socket){
+    string OK = "OK";
+    sleep(0.1);
+    send(socket, OK.data(), OK.size(), 0);
+}
+
+void sendERR(int socket){
+    string ERR = "ERR";
+    sleep(0.1);
+    send(socket, ERR.data(), ERR.size(), 0);
+}
+
+void sendEOF(int socket){
+    string eof = "EOF";
+    sleep(0.1);
+    send(socket, eof.data(), eof.size(), 0);
+}
+
+void sendText(int socket, string text){
+    sleep(0.1);
+    send(socket, text.data(), text.size(), 0);
+}
+
+void Send(int socket, string username, filesystem::path mailspool_userDir){
+    string message = "";
+
+    //Sender
+    message.append(ReadMsg(socket) + "\n");
+    //Receiver
+    message.append(ReadMsg(socket) + "\n");
+    //Subject
+    message.append(ReadMsg(socket) + "\n");
+    //Message
+    message.append(ReadMsg(socket) + "\n");
+
+    string response = messageToFile(message, mailspool_userDir);
+    sendText(socket, response);
+}
+
+void List(int socket, filesystem::path mailspoolPath){
+    string response = "";
     int id = 1;
+
+    string username = ReadMsg(socket);
+    filesystem::path userDir = mailspoolPath / username;
+
+    if(!filesystem::exists(userDir)){
+        sendText(socket, "0");
+        sendEOF(socket);
+        return;
+    }
+
     for (auto const &dir_entry : filesystem::directory_iterator(userDir))
     {
         string name = filesystem::path(dir_entry).filename();
@@ -71,37 +139,60 @@ string listMessagesFromUser(filesystem::path userDir){
             for(int i=0;i<3;++i){
                 getline(current_file, subject);
             }
-            msgList.append(name.substr(0,1) + ": " + subject + "\n");
+            response = name.substr(0,1) + ": " + subject + "\n";
+            sendText(socket, response);
             ++id;
         }       
     }
 
-    if(msgList == "")
-        return "empty";
-    else
-        return msgList;
+    if(id == 1){
+        sendText(socket, "0");
+    }
+    
+    sendEOF(socket);
 }
 
-bool deleteMessageFromUser(filesystem::path userDir, string id){
-    id = id + ".txt";
+void Delete(int socket, filesystem::path mailspool_path){
+    string res = "";
+    filesystem::path userDir = mailspool_path / ReadMsg(socket);
+    string id = ReadMsg(socket) + ".txt";
     bool deleted = false;
+
+    //Check if user exists
+    if(!filesystem::exists(userDir)){
+        sendERR(socket);
+        return;
+    }
+
     for(auto const &dir_entry : filesystem::directory_iterator(userDir)){
         string name = filesystem::path(dir_entry).filename();
         if(name == id){
-            if(filesystem::remove(dir_entry) == 0){
+            if(filesystem::remove(dir_entry)){
+                sendOK(socket);
                 deleted = true;
                 break;
             }
         }
     }
-    return deleted;
+
+    if(!deleted){
+        sendERR(socket);
+    }
 }
 
-string readMessageFromUser(filesystem::path userDir, string id){
-    int init = 0;
+void Read(int socket, filesystem::path mailspool_path){
     string res = "";
     bool found = false;
-    id = id + ".txt";
+    filesystem::path userDir = mailspool_path / ReadMsg(socket);
+    string id = ReadMsg(socket) + ".txt";
+
+    //Check if user exists
+    if(!filesystem::exists(userDir)){
+        sendERR(socket);
+        return;
+    }
+
+    //iterate through user directory and look for the right file
     for(auto const &dir_entry : filesystem::directory_iterator(userDir))
     {
         string name = filesystem::path(dir_entry).filename();
@@ -110,61 +201,42 @@ string readMessageFromUser(filesystem::path userDir, string id){
             found = true;
             if (current_file.is_open()) {
                 string text;
+                sendOK(socket);
                 while (getline(current_file, text)) {
-                    switch (init) {
-                        case 0:
-                            res.append("Sender: " + text + "\n");
-                            init++;
-                            break;
-                        case 1:
-                            res.append("Receiver: " + text + "\n");
-                            init++;
-                            break;
-                        case 2:
-                            res.append("Subject: " + text + "\n");
-                            init++;
-                            break;
-                        case 3:
-                            res.append("Message:  " + text + "\n");
-                            init++;
-                            break;
-                        default:
-                            break;
-                    }
+                    //send line by line, send EOF at the end
+                    sendText(socket, text);
                 }
+                sendEOF(socket);
             } else {
-                cout << "couldnt open file" << endl;
-                res = "ERR: couldn't open file";
+                cerr << "couldnt open file" << endl;
+                sendERR(socket);
+                return;
             }
         }
     }
-    if (found) {}
-    else {
-        cout << " message not found" << endl;
-        res = "ERR: message not found";
+    
+    if (!found){
+        cerr << " message not found" << endl;
+        sendERR(socket);
+        return;
     }
-    cout << res << endl;
-    return res;
-
 }
 
 int main(int argc, char *argv[])
 {
     if(argc<3){
-        cout << "Invalid number of arguments\nUsage: ./filename <port> <mail-spool-directory>" << endl;
+        cerr << "Invalid number of arguments\nUsage: ./filename <port> <mail-spool-directory>" << endl;
         return -1;
     }
 
     int server_fd, new_socket;
     struct sockaddr_in address;
     char buffer[1024];
-    vector<string> messageTokens;
     string message;
     int opt = 1;
     int n = 0;
     int port = atoi(argv[1]);
-    string mailspool_dir = argv[2];
-    filesystem::path mailspool_path = filesystem::current_path() / mailspool_dir;
+    filesystem::path mailspool_path = filesystem::current_path() / argv[2];
 
     cout << "Path: " << mailspool_path << endl;
 
@@ -199,14 +271,14 @@ int main(int argc, char *argv[])
 
     cout << "Server running and listening on port " << port << endl;
 
+    //TODO: FORK
     if ((new_socket = accept(server_fd, (struct sockaddr*)&address,(socklen_t*)&addrlen))< 0) {
         perror("accept");
         exit(EXIT_FAILURE);
     }
 
-    string username;
-    
     //get username
+    string username;
     if((n=recv(new_socket, buffer, sizeof(buffer), 0))>0){
         username.append(buffer, buffer+n);
     }
@@ -214,86 +286,28 @@ int main(int argc, char *argv[])
     cout << username << " connected!" << endl;
     filesystem::path mailspool_userDir = mailspool_path / username;
 
-    if(!filesystem::exists(mailspool_userDir)){
-        filesystem::create_directory(mailspool_userDir);
-
-        ofstream myFile(mailspool_userDir / "current_id.txt");
-        if(myFile.is_open()){
-            myFile << "1";
-            myFile.close();
-        }else{
-            cout << "ERR: opening file" << endl;
-            return -1;
-        } 
+    if(CreateUserDir(username, mailspool_userDir) == -1){
+        cerr << "ERR: opening file" << endl;
+        return -1;
     }
-    
-    // Function to read incoming message
+
+    //listen for incoming operations
+    string operation;
     while((n=recv(new_socket, buffer, sizeof(buffer), 0))>0){
-        message.append(buffer, buffer+n);
-        messageTokens = splitInputMessage(message);
-
-        if(messageTokens[1] == "SEND"){
-            if(messageTokens.size() < 5){
-                string error = "ERR\n";
-                cout << "ERR" << endl;
-                send(new_socket, error.data(), error.size(), 0);
-            }else{
-                string msgWithoutHeaders = username + "\n" + messageTokens[2] + "\n" + messageTokens[3] + "\n";
-                for(unsigned int i=4;i<messageTokens.size();++i){
-                    msgWithoutHeaders.append(messageTokens[i]);
-                }
-                messageToFile(msgWithoutHeaders, mailspool_userDir);
-                cout << "OK" << endl;
-                string ok = "OK\n";
-                send(new_socket, ok.data(), ok.size(), 0);
-            }
-            
+        operation.clear();
+        operation.append(buffer, buffer+n);
+        cout << operation << endl;
+        if(operation == "SEND"){
+            Send(new_socket, username, mailspool_userDir);
+        }else if(operation == "LIST"){
+            List(new_socket, mailspool_path);
+        }else if(operation == "READ"){
+            Read(new_socket, mailspool_path);
+        }else if(operation == "DEL"){
+            Delete(new_socket, mailspool_path);
+        }else if(operation == "QUIT"){
+            //Quit(new_socket);
         }
-        else if(messageTokens[1] == "LIST"){
-            string msgList = listMessagesFromUser(mailspool_path / messageTokens[2]);
-            cout << " ------------------- " << endl;
-            cout << "SUBJECT LIST" << endl;
-            cout << msgList << endl;
-            if(send(new_socket, msgList.data(), msgList.size(), 0) < 0){
-                string error = "ERR\n";
-                send(new_socket, error.data(), error.size(), 0);
-                perror("ERR: Sending message list");
-                //return errno;
-            }else{
-                cout << "Sent to client!" << endl;
-            }
-
-        }
-        else if(messageTokens[1] == "DEL"){
-            cout << "DEL" << endl;
-            if(!deleteMessageFromUser(mailspool_path / messageTokens[2], messageTokens[3])){
-                string ok = "OK\n";
-                send(new_socket, ok.data(), ok.size(), 0);
-                cout << "Sent to client!" << endl;
-            } else {
-                string error = "ERR\n";
-                send(new_socket, error.data(), error.size(), 0);
-                perror("Error deleting msg!");
-            }
-
-            //delete message with given id from given user
-        }else if(messageTokens[1] == "READ"){
-            cout << "READ" << endl;
-            //read message with given id from given user
-            string readMsg = readMessageFromUser(mailspool_path / messageTokens[2], messageTokens[3]);
-            if(send(new_socket, readMsg.data(), readMsg.size(), 0) < 0){
-                string error = "ERR\n";
-                send(new_socket, error.data(), error.size(), 0);
-                perror("Error sending readMsg!");
-            } else {
-                string ok = "OK\n";
-                send(new_socket, ok.data(), ok.size(), 0);
-                cout << "Sent to client!" << endl;
-            }
-        }
-
-        message.clear();
-        messageTokens.clear();
     }
 
     cout << username << " disconnected!" << endl;

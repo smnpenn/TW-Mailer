@@ -4,7 +4,7 @@
 all: server
 
 server: main.cpp
-	gcc main.cpp -lstdc++ -Wall -o tw-mailer-server
+	g++ -std=c++17 -Wall -Werror -o tw-mailer-server main.cpp
 
 clean:
 	rm -f tw-mailer-server
