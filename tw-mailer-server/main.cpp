@@ -1,5 +1,6 @@
 #include <iostream>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,11 +13,18 @@
 #include <filesystem>
 #include <fstream>
 #include <cstring>
+#include <signal.h>
+#include <pthread.h>
+#include "ThreadArguments.cpp"
 
 #define MAXLINE 1500
 #define PORT 8080
 
 using namespace std;
+
+int server_fd;
+vector<pthread_t> threadPool;
+vector<int> socketPool;
 
 int CreateUserDir(string username, filesystem::path mailspool_userDir){
 
@@ -31,6 +39,7 @@ int CreateUserDir(string username, filesystem::path mailspool_userDir){
             return -1;
         } 
     }
+    
     return 0;
 }
 
@@ -222,6 +231,78 @@ void Read(int socket, filesystem::path mailspool_path){
     }
 }
 
+void Quit(int socket, string username){
+    cout << username << " disconnected" << endl;
+    close(socket);
+}
+
+void* ClientHandler(void* threadargs){
+    //get username
+    string username;
+    int n;
+    char buffer[1024];
+
+    //TODO: Operation LOGIN (LDAP)
+    //TODO: Mailer Pro Features einbauen bei SEND LIST READ DEL (USername bzw Sender soll automatisch gesetzt werden --> authentifizierter User)
+
+    if((n=recv(((ThreadArguments*)threadargs)->socket, buffer, sizeof(buffer), 0))>0){
+        username.append(buffer, buffer+n);
+    }
+
+    cout << username << " connected!" << endl;
+    filesystem::path mailspool_userDir = ((ThreadArguments*)threadargs)->mailspool_path / username;
+
+    if(CreateUserDir(username, mailspool_userDir) == -1){
+        cerr << "ERR: opening file" << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    //listen for incoming operations
+    string operation;
+    while((n=recv(((ThreadArguments*)threadargs)->socket, buffer, sizeof(buffer), 0))>0){
+        operation.clear();
+        operation.append(buffer, buffer+n);
+        cout << operation << endl;
+        if(operation == "SEND"){
+            Send(((ThreadArguments*)threadargs)->socket, username, mailspool_userDir);
+        }else if(operation == "LIST"){
+            List(((ThreadArguments*)threadargs)->socket, ((ThreadArguments*)threadargs)->mailspool_path);
+        }else if(operation == "READ"){
+            Read(((ThreadArguments*)threadargs)->socket, ((ThreadArguments*)threadargs)->mailspool_path);
+        }else if(operation == "DEL"){
+            Delete(((ThreadArguments*)threadargs)->socket, ((ThreadArguments*)threadargs)->mailspool_path);
+        }else if(operation == "QUIT"){
+            Quit(((ThreadArguments*)threadargs)->socket, username);
+        }
+    }
+
+    return 0;
+}
+
+//when server gets signal --> join all threads and close all sockets
+void signal_handler(int signal){
+    cout << "Got Signal: " << signal << endl;
+    cout << "Shutting down mail server!" << endl;
+
+    cout << "No. of Threads: " << threadPool.size() << endl;
+    if(threadPool.size() > 0){
+        for(auto &thread : threadPool){
+            pthread_cancel(thread);
+        }
+    }
+
+    if(socketPool.size() > 0){
+        for(auto &socket : socketPool){
+            if(socket > 0){
+                close(socket);
+            }
+        }
+    }
+
+    close(server_fd);
+    exit(signal);
+}
+
 int main(int argc, char *argv[])
 {
     if(argc<3){
@@ -229,12 +310,9 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    int server_fd, new_socket;
     struct sockaddr_in address;
-    char buffer[1024];
     string message;
     int opt = 1;
-    int n = 0;
     int port = atoi(argv[1]);
     filesystem::path mailspool_path = filesystem::current_path() / argv[2];
 
@@ -271,47 +349,23 @@ int main(int argc, char *argv[])
 
     cout << "Server running and listening on port " << port << endl;
 
-    //TODO: FORK
-    if ((new_socket = accept(server_fd, (struct sockaddr*)&address,(socklen_t*)&addrlen))< 0) {
-        perror("accept");
-        exit(EXIT_FAILURE);
-    }
-
-    //get username
-    string username;
-    if((n=recv(new_socket, buffer, sizeof(buffer), 0))>0){
-        username.append(buffer, buffer+n);
-    }
-
-    cout << username << " connected!" << endl;
-    filesystem::path mailspool_userDir = mailspool_path / username;
-
-    if(CreateUserDir(username, mailspool_userDir) == -1){
-        cerr << "ERR: opening file" << endl;
-        return -1;
-    }
-
-    //listen for incoming operations
-    string operation;
-    while((n=recv(new_socket, buffer, sizeof(buffer), 0))>0){
-        operation.clear();
-        operation.append(buffer, buffer+n);
-        cout << operation << endl;
-        if(operation == "SEND"){
-            Send(new_socket, username, mailspool_userDir);
-        }else if(operation == "LIST"){
-            List(new_socket, mailspool_path);
-        }else if(operation == "READ"){
-            Read(new_socket, mailspool_path);
-        }else if(operation == "DEL"){
-            Delete(new_socket, mailspool_path);
-        }else if(operation == "QUIT"){
-            //Quit(new_socket);
+    //TODO: Kritische Bereiche mit Mutex absichern (bspw. current id file)
+    while(true){
+        int new_socket;
+        if ((new_socket = accept(server_fd, (struct sockaddr*)&address,(socklen_t*)&addrlen)) < 0) {
+            perror("accept");
+            //TODO: glaube exit hier keine option, da man ja nicht will dass der ganze server down geht wenn sich ein client nicht verbinden kann
+            exit(EXIT_FAILURE);
         }
-    }
+        pthread_t newThread;
+        ThreadArguments* threadargs = new ThreadArguments(mailspool_path, new_socket);
 
-    cout << username << " disconnected!" << endl;
-    shutdown(new_socket, SHUT_WR);
+        pthread_create(&newThread, NULL, ClientHandler, (void*)threadargs);
+        threadPool.push_back(newThread);
+
+        //SIGINT = CTRL+C
+        (void) signal(SIGINT, signal_handler);
+    }
 
     return 0;
 }

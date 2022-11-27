@@ -141,7 +141,9 @@ void Delete(int sock){
 }
 
 void Quit(int sock){
-
+    cout << "Quitting application..." << endl;
+    SendMessageToServer(sock, "QUIT");
+    close(sock);
 }
 
 int main(int argc, char *argv[])
@@ -221,6 +223,7 @@ int main(int argc, char *argv[])
             Delete(sock);
         }else if(operation == "QUIT"){
             Quit(sock);
+            break;
         }else if(operation == "HELP"){
             cout << "SEND: Send a message to the server" << endl;
             cout << "LIST: List all messages of a certain user" << endl;
@@ -234,4 +237,6 @@ int main(int argc, char *argv[])
 
         operation.clear();
     }
+
+    return 0;
 }
