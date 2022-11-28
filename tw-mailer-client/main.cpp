@@ -1,5 +1,6 @@
 #include <iostream>
 #include <unistd.h>
+#include <termios.h>
 #include <string>
 #include <algorithm>
 #include <sys/socket.h>
@@ -43,6 +44,8 @@ string GetServerResponse(int sock){
 
 void Send(int sock){
     string message = "SEND";
+    string textMessage(80, '\n');
+    bool fitsSize = false;
     SendMessageToServer(sock, message);
 
     message.clear();
@@ -50,16 +53,21 @@ void Send(int sock){
     cin >> message;
     SendMessageToServer(sock, message);
 
-    //TODO: max 80 chars (+ cin bricht bei Leerzeichen ab: also geht zum Beispiel ein Betreff: "Hallo Max" nicht, "Max wird hier dann in die Nachricht geschrieben und nur Hallo in den Betreff")
     message.clear();
     cout << "Subject:" << endl;
-    cin >> message;
+    getline(cin >> ws, message); // um das mit dem space to fixen.
     SendMessageToServer(sock, message);
 
     message.clear();
     cout << "Message:" << endl;
-    getline(cin, message, '.');
-    SendMessageToServer(sock, message);
+    do{
+        getline(cin, textMessage, '.');
+        if((textMessage.length() > 0) && (textMessage.length() <= 80)){
+            fitsSize = true;
+            break;
+        }
+    }while(fitsSize == false);
+    SendMessageToServer(sock, textMessage);
 
     cout << "Server response: " << GetServerResponse(sock) << endl;
 }
@@ -150,6 +158,49 @@ string validUsername(){
     return userString;
 }
 
+string loginFunction(int sock){
+
+    int attempts = 0;
+    string userstr;
+    string userpw;
+
+    do{
+        userstr.clear();
+        userstr = validUsername();
+
+        // Hide input
+        termios oldt;
+        tcgetattr(STDIN_FILENO, &oldt);
+        termios newt = oldt;
+        newt.c_lflag &= ~ECHO;
+        tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+        cout << "Enter password: " << endl;
+        cin >> userpw;
+        tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+        // display input
+
+
+        SendMessageToServer(sock, userstr);
+        SendMessageToServer(sock, userpw);
+        string response = GetServerResponse(sock);
+        cout << "Response " << response << endl;
+        if(response == "ERR"){
+            cout << "Invalid username/password!" << endl;
+            if(attempts == 2){
+                cout << "Client locked!" << endl;
+                return "LOCKED";
+            }
+            attempts++;
+            userstr = "UNDEFINED";
+        } else if(response == "OK") {
+            break;
+        }
+
+    }while(attempts < 3);
+
+    return userstr;
+}
+
 int main(int argc, char *argv[])
 {
     if(argc<3){
@@ -157,7 +208,7 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    int attempts = 0;
+    // int attempts = 0;
     bool authorized = false;
 
     string userstr;
@@ -192,58 +243,62 @@ int main(int argc, char *argv[])
     }
     cout << "Connected" << endl;
 
-    do{
-        userstr.clear();
-        userstr = validUsername();
-        cout << "Enter password: " << endl;
-        cin >> userpw;
-        SendMessageToServer(sock, userstr);
-        SendMessageToServer(sock, userpw);
-        string response = GetServerResponse(sock);
-        cout << "Response " << response << endl;
-        if(response == "ERR"){
-            cout << "Invalid username/password!" << endl;
-            if(attempts == 2){
-                cout << "Client locked!" << endl;
-                return -1;
-            }
-            attempts++;
-        } else if(response == "OK") {
-            // cout << "Else block" << endl;
-            authorized = true;
-            break;
-        }
-
-    }while(attempts < 3 && !authorized);
-
     
-    cout << "Chosen username " << userstr << endl;
-
 
     while(true){
         string operation;
         cout << "Choose operation (type help to see all the options):" << endl;
         cin >> operation;
-        //TODO: to upper/lower case damit Groß-Kleinschreibung keinen Unterschied macht
-        //TODO: LOGIN operation (andere Operation (außer Quit) erst nach Authentifizierung freischalten)
+        transform(operation.begin(), operation.end(), operation.begin(), ::toupper);
         
         if(operation == "SEND"){
-            Send(sock);
+            if(authorized == true){
+                Send(sock);
+            } else {
+                cout << "ERR: unauthorized" << endl;
+            }
         }else if(operation == "LIST"){
-            List(sock);
+            if(authorized == true){
+                List(sock);
+            } else {
+                cout << "ERR: unauthorized" << endl;
+            }
         }else if(operation == "READ"){
-            Read(sock);
+            if(authorized == true){
+                Read(sock);
+            } else {
+                cout << "ERR: unauthorized" << endl;
+            }
         }else if(operation == "DEL"){
-            Delete(sock);
+            if(authorized == true){
+                Delete(sock);
+            } else {
+                cout << "ERR: unauthorized" << endl;
+            }
         }else if(operation == "QUIT"){
             Quit(sock);
             break;
         }else if(operation == "HELP"){
-            cout << "SEND: Send a message to the server" << endl;
-            cout << "LIST: List all messages of a certain user" << endl;
-            cout << "READ: Read a message of a certain user" << endl;
-            cout << "DELETE: Delete a message of a certain user" << endl;
-            cout << "QUIT: logout" << endl;
+            if(authorized == false){
+                cout << "LOGIN: Login to LDAP" << endl;
+                cout << "QUIT: logout" << endl;
+            } else if(authorized == true){
+                cout << "SEND: Send a message to the server" << endl;
+                cout << "LIST: List all messages of a certain user" << endl;
+                cout << "READ: Read a message of a certain user" << endl;
+                cout << "DELETE: Delete a message of a certain user" << endl;
+                cout << "QUIT: logout" << endl;
+            }
+        } else if(operation == "LOGIN"){
+            userstr = loginFunction(sock);
+            if(userstr == "UNDEFINED" || userstr == "LOCKED"){
+                authorized = false;
+                if(userstr == "LOCKED"){
+                    return -1;
+                }
+            } else {
+                authorized = true;
+            }
         }
         else{
             cout << "Unknown operation!\nTry again!" << endl;

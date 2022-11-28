@@ -352,8 +352,6 @@ void* ClientHandler(void* threadargs){
     bool authorized = false;
     int n;
     char buffer[1024];
-
-    //TODO: Operation LOGIN (LDAP) (block andere Operations bis erfolgreiche Authentifizierung)
     
     do{
         if((n=recv(((ThreadArguments*)threadargs)->socket, buffer, sizeof(buffer), 0))>0){
