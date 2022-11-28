@@ -46,9 +46,7 @@ void Send(int sock, string username){
     SendMessageToServer(sock, message);
 
     message.clear();
-    cout << "Sender:" << endl;
-    cin >> message;
-    SendMessageToServer(sock, message);
+    SendMessageToServer(sock, username);
 
     message.clear();
     cout << "Receiver:" << endl;
@@ -69,15 +67,13 @@ void Send(int sock, string username){
     cout << "Server response: " << GetServerResponse(sock) << endl;
 }
 
-void List(int sock){
+void List(int sock, string username){
     string response = "";
     string message = "LIST";
     SendMessageToServer(sock, message);
 
     message.clear();
-    cout << "Username:" << endl;
-    cin >> message;
-    SendMessageToServer(sock, message);
+    SendMessageToServer(sock, username);
 
     while(true){
         response.clear();
@@ -91,14 +87,12 @@ void List(int sock){
     }
 }
 
-void Read(int sock){
+void Read(int sock, string username){
     string message = "";
     string response = "";
     SendMessageToServer(sock, "READ");
 
-    cout << "Username: " << endl;
-    cin >> message;
-    SendMessageToServer(sock, message);
+    SendMessageToServer(sock, username);
 
     cout << "Message No.: " << endl;
     cin >> message;
@@ -122,14 +116,12 @@ void Read(int sock){
     }
 }
 
-void Delete(int sock){
+void Delete(int sock, string username){
     string message = "";
     string response = "";
     SendMessageToServer(sock, "DEL");
 
-    cout << "Username: " << endl;
-    cin >> message;
-    SendMessageToServer(sock, message);
+    SendMessageToServer(sock, username);
 
     cout << "Message No.: " << endl;
     cin >> message;
@@ -146,6 +138,26 @@ void Quit(int sock){
     close(sock);
 }
 
+string validUsername(){
+    string userString;
+    while(true){
+        cout << "Enter Technikum LDAP username:" << endl;
+        do {
+            cin >> userString;
+            transform(userString.begin(), userString.end(), userString.begin(),[](unsigned char c){return std::tolower(c); }); // converting string to lower case
+            if(!checkStringValidity(userString)){
+                cout << "Username should only contain a-z and 0-9" << endl;
+            }
+        }while(!checkStringValidity(userString));
+        if(userString.length()>8){
+            cout << "Username is too long (max 8 character)" << endl;
+        }else{
+            break;
+        }
+    }
+    return userString;
+}
+
 int main(int argc, char *argv[])
 {
     if(argc<3){
@@ -153,14 +165,19 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    int attempts = 0;
+    bool authorized = false;
+
     string userstr;
+    string userpw;
     char* server_ip = argv[1];
     int server_port = atoi(argv[2]);
 
     // Usage ./twmailer-client <ip> <port>
     
-    while(true){
-        cout << "Enter username: " << endl;
+    /*while(true){
+        cout << "Enter Technikum LDAP username: " << endl;
+
 
         do{
             cin >> userstr;
@@ -176,8 +193,8 @@ int main(int argc, char *argv[])
             break;
         }
     }
+    */
     
-    cout << "Chosen username " << userstr << endl;
 
     // ---------- SOCKET CREATION -----------
     
@@ -204,8 +221,33 @@ int main(int argc, char *argv[])
     }
     cout << "Connected" << endl;
 
-    //send username
-    SendMessageToServer(sock, userstr);
+    do{
+        userstr.clear();
+        userstr = validUsername();
+        cout << "Enter password: " << endl;
+        cin >> userpw;
+        SendMessageToServer(sock, userstr);
+        SendMessageToServer(sock, userpw);
+        string response = GetServerResponse(sock);
+        cout << "Response " << response << endl;
+        if(response == "ERR"){
+            cout << "Invalid username/password!" << endl;
+            if(attempts == 2){
+                cout << "Client locked!" << endl;
+                return -1;
+            }
+            attempts++;
+        } else if(response == "OK") {
+            // cout << "Else block" << endl;
+            authorized = true;
+            break;
+        }
+
+    }while(attempts < 3 && !authorized);
+
+    
+    cout << "Chosen username " << userstr << endl;
+
 
     while(true){
         string operation;
@@ -216,11 +258,11 @@ int main(int argc, char *argv[])
         if(operation == "SEND"){
             Send(sock, userstr);
         }else if(operation == "LIST"){
-            List(sock);
+            List(sock, userstr);
         }else if(operation == "READ"){
-            Read(sock);
+            Read(sock, userstr);
         }else if(operation == "DEL"){
-            Delete(sock);
+            Delete(sock, userstr);
         }else if(operation == "QUIT"){
             Quit(sock);
             break;

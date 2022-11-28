@@ -16,6 +16,7 @@
 #include <signal.h>
 #include <pthread.h>
 #include "ThreadArguments.cpp"
+#include <ldap.h>
 
 #define MAXLINE 1500
 #define PORT 8080
@@ -41,6 +42,66 @@ int CreateUserDir(string username, filesystem::path mailspool_userDir){
     }
     
     return 0;
+}
+
+bool loginToLDAP(string user, string password){
+
+    // BEGIN URI INFO
+    string loginURI = "ldap://ldap.technikum-wien.at:389";
+    char loginURIArray[loginURI.length()+1];
+    strcpy(loginURIArray, loginURI.c_str());
+
+    // END URI INFO
+
+    LDAP* ldap;
+    BerValue *serverCredentials;
+    BerValue credentials;
+
+    int check = 0;
+    
+
+    char password_to_array[password.length()+1];
+    strcpy(password_to_array, password.c_str());
+    credentials.bv_val = (char *) password_to_array;
+    credentials.bv_len = password.length();
+
+    int version = LDAP_VERSION3;
+
+    if(ldap_initialize(&ldap, "ldap://ldap.technikum-wien.at:389") != LDAP_SUCCESS){
+        cout << "LDAP Initialization failed!" << endl;
+        return EXIT_FAILURE;
+    }
+
+    if((check = ldap_set_option(ldap, LDAP_OPT_PROTOCOL_VERSION, &version)) != LDAP_SUCCESS){
+        cout << "ERROR: LDAP OPT PROTOCOL VERSION =!= 3" << endl;
+        return EXIT_FAILURE;
+    }
+
+    if((check = ldap_start_tls_s(ldap, NULL, NULL)) != LDAP_SUCCESS){
+        cout << "ERROR: LDAP START TLS FAILED" << endl;
+        return EXIT_FAILURE;
+    }
+    string ldapUser = "uid=" + user + ",ou=People," + "dc=technikum-wien,dc=at";
+
+    char result[ldapUser.length()+1];
+    strcpy(result, ldapUser.c_str());
+
+    check = ldap_sasl_bind_s(ldap, result, LDAP_SASL_SIMPLE, &credentials, NULL, NULL, &serverCredentials);
+
+    if(check != LDAP_SUCCESS){
+        cout << "ERROR: LDAP BIND FAILED" << endl;
+        ldap_unbind_ext_s(ldap, NULL, NULL);
+        return false;
+    }
+
+    cout << "LDAP BIND SUCCESSFUL" << endl;
+
+    cout << "LDAP SEARCH SUCCESSFUL" << endl;
+
+    ldap_unbind_ext_s(ldap, NULL, NULL);
+
+    return true;
+
 }
 
 string messageToFile(string message, filesystem::path path){
@@ -239,40 +300,59 @@ void Quit(int socket, string username){
 void* ClientHandler(void* threadargs){
     //get username
     string username;
+    string password;
+    // int attempt = 0;
+    bool authorized = false;
     int n;
     char buffer[1024];
 
     //TODO: Operation LOGIN (LDAP)
     //TODO: Mailer Pro Features einbauen bei SEND LIST READ DEL (USername bzw Sender soll automatisch gesetzt werden --> authentifizierter User)
+    do{
+        if((n=recv(((ThreadArguments*)threadargs)->socket, buffer, sizeof(buffer), 0))>0){
+            username.append(buffer, buffer+n);
+        }
+        if((n=recv(((ThreadArguments*)threadargs)->socket, buffer, sizeof(buffer), 0))>0){
+            password.append(buffer, buffer+n);
+        }
 
-    if((n=recv(((ThreadArguments*)threadargs)->socket, buffer, sizeof(buffer), 0))>0){
-        username.append(buffer, buffer+n);
-    }
+        if(loginToLDAP(username, password)){
+            cout << "connected to technikum LDAP" << endl;
+            authorized = true;
+            sendText(((ThreadArguments*)threadargs)->socket, "OK");
+            break;
+        } else {
+            cout << "connection to technikum LDAP failed" << endl;
+            sendERR(((ThreadArguments*)threadargs)->socket);
+        }
+    }while(!authorized);
 
-    cout << username << " connected!" << endl;
-    filesystem::path mailspool_userDir = ((ThreadArguments*)threadargs)->mailspool_path / username;
+    if(authorized){
+        cout << username << " connected!" << endl;
+        filesystem::path mailspool_userDir = ((ThreadArguments*)threadargs)->mailspool_path / username;
 
-    if(CreateUserDir(username, mailspool_userDir) == -1){
-        cerr << "ERR: opening file" << endl;
-        exit(EXIT_FAILURE);
-    }
-
-    //listen for incoming operations
-    string operation;
-    while((n=recv(((ThreadArguments*)threadargs)->socket, buffer, sizeof(buffer), 0))>0){
-        operation.clear();
-        operation.append(buffer, buffer+n);
-        cout << operation << endl;
-        if(operation == "SEND"){
-            Send(((ThreadArguments*)threadargs)->socket, username, mailspool_userDir);
-        }else if(operation == "LIST"){
-            List(((ThreadArguments*)threadargs)->socket, ((ThreadArguments*)threadargs)->mailspool_path);
-        }else if(operation == "READ"){
-            Read(((ThreadArguments*)threadargs)->socket, ((ThreadArguments*)threadargs)->mailspool_path);
-        }else if(operation == "DEL"){
-            Delete(((ThreadArguments*)threadargs)->socket, ((ThreadArguments*)threadargs)->mailspool_path);
-        }else if(operation == "QUIT"){
-            Quit(((ThreadArguments*)threadargs)->socket, username);
+        if(CreateUserDir(username, mailspool_userDir) == -1){
+            cerr << "ERR: opening file" << endl;
+            exit(EXIT_FAILURE);
+        }
+    
+        //listen for incoming operations
+        string operation;
+        while((n=recv(((ThreadArguments*)threadargs)->socket, buffer, sizeof(buffer), 0))>0){
+            operation.clear();
+            operation.append(buffer, buffer+n);
+            cout << operation << endl;
+            if(operation == "SEND"){
+                Send(((ThreadArguments*)threadargs)->socket, username, mailspool_userDir);
+            }else if(operation == "LIST"){
+                List(((ThreadArguments*)threadargs)->socket, ((ThreadArguments*)threadargs)->mailspool_path);
+            }else if(operation == "READ"){
+                Read(((ThreadArguments*)threadargs)->socket, ((ThreadArguments*)threadargs)->mailspool_path);
+            }else if(operation == "DEL"){
+                Delete(((ThreadArguments*)threadargs)->socket, ((ThreadArguments*)threadargs)->mailspool_path);
+            }else if(operation == "QUIT"){
+                Quit(((ThreadArguments*)threadargs)->socket, username);
+            }
         }
     }
 
