@@ -17,6 +17,7 @@
 #include <pthread.h>
 #include "ThreadArguments.cpp"
 #include <ldap.h>
+#include <set>
 
 #define MAXLINE 1500
 #define PORT 8080
@@ -26,19 +27,30 @@ using namespace std;
 int server_fd;
 vector<pthread_t> threadPool;
 vector<int> socketPool;
+pthread_mutex_t mutex;
 
-int CreateUserDir(string username, filesystem::path mailspool_userDir){
+int CreateUserDir(string username, filesystem::path mailspool_path){
+    filesystem::path userDir = mailspool_path / username;
+    if(!filesystem::exists(userDir)){
+        filesystem::create_directory(userDir);
 
-    if(!filesystem::exists(mailspool_userDir)){
-        filesystem::create_directory(mailspool_userDir);
-
-        ofstream myFile(mailspool_userDir / "current_id.txt");
+        ofstream myFile(userDir / "current_id.txt");
         if(myFile.is_open()){
             myFile << "1";
             myFile.close();
         }else{
             return -1;
         } 
+    }else{
+        if(!filesystem::exists(userDir/ "current_id.txt")){
+            ofstream myFile(userDir / "current_id.txt");
+            if(myFile.is_open()){
+                myFile << "1";
+                myFile.close();
+            }else{
+                return -1;
+            } 
+        }
     }
     
     return 0;
@@ -104,8 +116,16 @@ bool loginToLDAP(string user, string password){
 
 }
 
-string messageToFile(string message, filesystem::path path){
-    ifstream current_id(path / "current_id.txt"); //, ios_base::in | ios_base::out
+//Save received messages in files inside the corresponding userfolder
+bool messageToFile(string message, filesystem::path path, string user){
+    
+    //create userfolder if it doesnt exist
+    if(CreateUserDir(user, path) == -1){
+        cerr << "ERR: opening file" << endl;
+        return false;
+    }
+
+    ifstream current_id(path / user / "current_id.txt");
     string id_str;
 
     if(current_id.is_open()){
@@ -113,27 +133,27 @@ string messageToFile(string message, filesystem::path path){
         current_id.close();
         int nextid = atoi(id_str.c_str())+1;
         id_str = id_str + ".txt";
-        ofstream messageFile(path / id_str);
+        ofstream messageFile(path / user / id_str);
         if(messageFile.is_open()){
             messageFile << message;
             messageFile.close();
-            ofstream current_idof(path / "current_id.txt");
-            if(current_idof.is_open()){
+            ofstream current_idof(path / user / "current_id.txt");
+            if(current_idof.is_open()){ //write new id in current_id.txt
                 current_idof << nextid;
                 current_idof.close();
             }
             
         }else{
-            return "ERR";
+            return false;
         }
         
     }else{
-        return "ERR";
+        return false;
     }
-
-    return "OK";
+    return true;
 }
 
+//read Message from given socket
 string ReadMsg(int socket){
     int n = 0;
     char buffer[1024];
@@ -168,30 +188,41 @@ void sendText(int socket, string text){
     send(socket, text.data(), text.size(), 0);
 }
 
-void Send(int socket, string username, filesystem::path mailspool_userDir){
+void Send(int socket, string username, filesystem::path mailspool_path){
+    pthread_mutex_lock(&mutex);
     string message = "";
+    string receiver = "";
 
     //Sender
-    message.append(ReadMsg(socket) + "\n");
+    message.append(username + "\n");
     //Receiver
-    message.append(ReadMsg(socket) + "\n");
+    receiver.append(ReadMsg(socket));
+    message.append(receiver + "\n");
     //Subject
     message.append(ReadMsg(socket) + "\n");
     //Message
     message.append(ReadMsg(socket) + "\n");
 
-    string response = messageToFile(message, mailspool_userDir);
-    sendText(socket, response);
+    cout << message << endl;
+
+    //write file in sender and receiver folder
+    if(messageToFile(message, mailspool_path, username) && messageToFile(message, mailspool_path, receiver)){
+        sendOK(socket);
+    }else{
+        sendERR(socket);
+    }
+    pthread_mutex_unlock(&mutex);
 }
 
-void List(int socket, filesystem::path mailspoolPath){
+void List(int socket, string username, filesystem::path mailspoolPath){
     string response = "";
     int id = 1;
 
-    string username = ReadMsg(socket);
     filesystem::path userDir = mailspoolPath / username;
+    string fileExtension = ".txt";
+    set<string> filesSorted;
 
-    if(!filesystem::exists(userDir)){
+    if(!filesystem::exists(userDir)){ //check if userDir exists
         sendText(socket, "0");
         sendEOF(socket);
         return;
@@ -199,6 +230,7 @@ void List(int socket, filesystem::path mailspoolPath){
 
     for (auto const &dir_entry : filesystem::directory_iterator(userDir))
     {
+        sleep(0.1);
         string name = filesystem::path(dir_entry).filename();
         if(name == "current_id.txt")
             continue;
@@ -206,25 +238,39 @@ void List(int socket, filesystem::path mailspoolPath){
         if(current_file.is_open()){
             string subject;
             
-            for(int i=0;i<3;++i){
+            for(int i=0;i<3;++i){ //get subject
                 getline(current_file, subject);
             }
-            response = name.substr(0,1) + ": " + subject + "\n";
-            sendText(socket, response);
-            ++id;
+            size_t extIndex = name.find(fileExtension);
+            if(extIndex != string::npos){
+                name.erase(extIndex, fileExtension.length());
+                filesSorted.insert(name + ": " + subject + "\n"); //write subject to set
+                //sendText(socket, response);
+                ++id;
+            }else{
+                sendERR(socket);
+                sendEOF(socket);
+                cout << "ERR: Wrong file in user directory" << endl;
+                return;
+            }
+            
         }       
     }
 
     if(id == 1){
         sendText(socket, "0");
+    }else{
+        for(string entry: filesSorted){ //send Mail line by line
+            sendText(socket, entry);
+        }
     }
     
     sendEOF(socket);
 }
 
-void Delete(int socket, filesystem::path mailspool_path){
+void Delete(int socket, string username, filesystem::path mailspool_path){
     string res = "";
-    filesystem::path userDir = mailspool_path / ReadMsg(socket);
+    filesystem::path userDir = mailspool_path / username;
     string id = ReadMsg(socket) + ".txt";
     bool deleted = false;
 
@@ -250,10 +296,10 @@ void Delete(int socket, filesystem::path mailspool_path){
     }
 }
 
-void Read(int socket, filesystem::path mailspool_path){
+void Read(int socket, string username, filesystem::path mailspool_path){
     string res = "";
     bool found = false;
-    filesystem::path userDir = mailspool_path / ReadMsg(socket);
+    filesystem::path userDir = mailspool_path / username;
     string id = ReadMsg(socket) + ".txt";
 
     //Check if user exists
@@ -277,6 +323,7 @@ void Read(int socket, filesystem::path mailspool_path){
                     sendText(socket, text);
                 }
                 sendEOF(socket);
+                return;
             } else {
                 cerr << "couldnt open file" << endl;
                 sendERR(socket);
@@ -306,8 +353,8 @@ void* ClientHandler(void* threadargs){
     int n;
     char buffer[1024];
 
-    //TODO: Operation LOGIN (LDAP)
-    //TODO: Mailer Pro Features einbauen bei SEND LIST READ DEL (USername bzw Sender soll automatisch gesetzt werden --> authentifizierter User)
+    //TODO: Operation LOGIN (LDAP) (block andere Operations bis erfolgreiche Authentifizierung)
+    
     do{
         if((n=recv(((ThreadArguments*)threadargs)->socket, buffer, sizeof(buffer), 0))>0){
             username.append(buffer, buffer+n);
@@ -331,7 +378,7 @@ void* ClientHandler(void* threadargs){
         cout << username << " connected!" << endl;
         filesystem::path mailspool_userDir = ((ThreadArguments*)threadargs)->mailspool_path / username;
 
-        if(CreateUserDir(username, mailspool_userDir) == -1){
+        if(CreateUserDir(username, ((ThreadArguments*)threadargs)->mailspool_path) == -1){
             cerr << "ERR: opening file" << endl;
             exit(EXIT_FAILURE);
         }
@@ -343,13 +390,13 @@ void* ClientHandler(void* threadargs){
             operation.append(buffer, buffer+n);
             cout << operation << endl;
             if(operation == "SEND"){
-                Send(((ThreadArguments*)threadargs)->socket, username, mailspool_userDir);
+                Send(((ThreadArguments*)threadargs)->socket, username, ((ThreadArguments*)threadargs)->mailspool_path);
             }else if(operation == "LIST"){
-                List(((ThreadArguments*)threadargs)->socket, ((ThreadArguments*)threadargs)->mailspool_path);
+                List(((ThreadArguments*)threadargs)->socket, username, ((ThreadArguments*)threadargs)->mailspool_path);
             }else if(operation == "READ"){
-                Read(((ThreadArguments*)threadargs)->socket, ((ThreadArguments*)threadargs)->mailspool_path);
+                Read(((ThreadArguments*)threadargs)->socket, username, ((ThreadArguments*)threadargs)->mailspool_path);
             }else if(operation == "DEL"){
-                Delete(((ThreadArguments*)threadargs)->socket, ((ThreadArguments*)threadargs)->mailspool_path);
+                Delete(((ThreadArguments*)threadargs)->socket, username, ((ThreadArguments*)threadargs)->mailspool_path);
             }else if(operation == "QUIT"){
                 Quit(((ThreadArguments*)threadargs)->socket, username);
             }
@@ -380,6 +427,7 @@ void signal_handler(int signal){
     }
 
     close(server_fd);
+    pthread_exit(NULL);
     exit(signal);
 }
 
@@ -429,16 +477,18 @@ int main(int argc, char *argv[])
 
     cout << "Server running and listening on port " << port << endl;
 
-    //TODO: Kritische Bereiche mit Mutex absichern (bspw. current id file)
     while(true){
         int new_socket;
         if ((new_socket = accept(server_fd, (struct sockaddr*)&address,(socklen_t*)&addrlen)) < 0) {
             perror("accept");
-            //TODO: glaube exit hier keine option, da man ja nicht will dass der ganze server down geht wenn sich ein client nicht verbinden kann
-            exit(EXIT_FAILURE);
+            //exit(EXIT_FAILURE);
         }
         pthread_t newThread;
         ThreadArguments* threadargs = new ThreadArguments(mailspool_path, new_socket);
+        if(pthread_mutex_init(&mutex, NULL) != 0){
+            cout << "ERR: mutex init" << endl;
+            exit(EXIT_FAILURE);
+        }
 
         pthread_create(&newThread, NULL, ClientHandler, (void*)threadargs);
         threadPool.push_back(newThread);
@@ -447,6 +497,8 @@ int main(int argc, char *argv[])
         (void) signal(SIGINT, signal_handler);
     }
 
+    pthread_mutex_destroy(&mutex);
+    pthread_exit(NULL);
     return 0;
 }
 

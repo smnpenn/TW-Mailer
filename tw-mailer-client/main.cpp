@@ -34,26 +34,23 @@ string GetServerResponse(int sock){
     char buffer[1024];
     int n = 0;
 
-    sleep(0.1);
+    //sleep(0.1);
     n = recv(sock, buffer, sizeof(buffer), 0);
     response.append(buffer, buffer+n);
     
     return response;
 }
 
-void Send(int sock, string username){
+void Send(int sock){
     string message = "SEND";
     SendMessageToServer(sock, message);
-
-    message.clear();
-    SendMessageToServer(sock, username);
 
     message.clear();
     cout << "Receiver:" << endl;
     cin >> message;
     SendMessageToServer(sock, message);
 
-    //max 80 chars
+    //TODO: max 80 chars (+ cin bricht bei Leerzeichen ab: also geht zum Beispiel ein Betreff: "Hallo Max" nicht, "Max wird hier dann in die Nachricht geschrieben und nur Hallo in den Betreff")
     message.clear();
     cout << "Subject:" << endl;
     cin >> message;
@@ -67,32 +64,29 @@ void Send(int sock, string username){
     cout << "Server response: " << GetServerResponse(sock) << endl;
 }
 
-void List(int sock, string username){
+void List(int sock){
     string response = "";
     string message = "LIST";
     SendMessageToServer(sock, message);
-
     message.clear();
-    SendMessageToServer(sock, username);
 
     while(true){
         response.clear();
         response = GetServerResponse(sock);
 
         if(response != "EOF"){
-            cout << response << endl;
+            cout << response;
         }else{
             break;
         }
     }
+    cout << endl;
 }
 
-void Read(int sock, string username){
+void Read(int sock){
     string message = "";
     string response = "";
     SendMessageToServer(sock, "READ");
-
-    SendMessageToServer(sock, username);
 
     cout << "Message No.: " << endl;
     cin >> message;
@@ -116,12 +110,10 @@ void Read(int sock, string username){
     }
 }
 
-void Delete(int sock, string username){
+void Delete(int sock){
     string message = "";
     string response = "";
     SendMessageToServer(sock, "DEL");
-
-    SendMessageToServer(sock, username);
 
     cout << "Message No.: " << endl;
     cin >> message;
@@ -175,27 +167,6 @@ int main(int argc, char *argv[])
 
     // Usage ./twmailer-client <ip> <port>
     
-    /*while(true){
-        cout << "Enter Technikum LDAP username: " << endl;
-
-
-        do{
-            cin >> userstr;
-            transform(userstr.begin(), userstr.end(), userstr.begin(),[](unsigned char c){return std::tolower(c); }); // converting string to lower case
-            if(!checkStringValidity(userstr)){
-                cout << "Username should only contain a-z and 0-9" << endl;
-            }
-        }while(!checkStringValidity(userstr));
-
-        if(userstr.length()>8){
-            cout << "Username is too long (max 8 character)" << endl;
-        }else{
-            break;
-        }
-    }
-    */
-    
-
     // ---------- SOCKET CREATION -----------
     
     int sock = 0, client_fd;
@@ -253,16 +224,17 @@ int main(int argc, char *argv[])
         string operation;
         cout << "Choose operation (type help to see all the options):" << endl;
         cin >> operation;
-        //to upper case
+        //TODO: to upper/lower case damit Groß-Kleinschreibung keinen Unterschied macht
+        //TODO: LOGIN operation (andere Operation (außer Quit) erst nach Authentifizierung freischalten)
         
         if(operation == "SEND"){
-            Send(sock, userstr);
+            Send(sock);
         }else if(operation == "LIST"){
-            List(sock, userstr);
+            List(sock);
         }else if(operation == "READ"){
-            Read(sock, userstr);
+            Read(sock);
         }else if(operation == "DEL"){
-            Delete(sock, userstr);
+            Delete(sock);
         }else if(operation == "QUIT"){
             Quit(sock);
             break;
