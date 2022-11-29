@@ -294,6 +294,8 @@ int main(int argc, char *argv[])
             if(userstr == "UNDEFINED" || userstr == "LOCKED"){
                 authorized = false;
                 if(userstr == "LOCKED"){
+                    shutdown(sock, SHUT_RDWR);
+                    close(sock);
                     return -1;
                 }
             } else {
