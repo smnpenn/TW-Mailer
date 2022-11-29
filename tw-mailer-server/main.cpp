@@ -189,7 +189,7 @@ void sendText(int socket, string text){
 }
 
 void Send(int socket, string username, filesystem::path mailspool_path){
-    pthread_mutex_lock(&mutex);
+    
     string message = "";
     string receiver = "";
 
@@ -205,6 +205,7 @@ void Send(int socket, string username, filesystem::path mailspool_path){
 
     cout << message << endl;
 
+    pthread_mutex_lock(&mutex);
     //write file in sender and receiver folder
     if(messageToFile(message, mailspool_path, username) && messageToFile(message, mailspool_path, receiver)){
         sendOK(socket);
@@ -222,9 +223,12 @@ void List(int socket, string username, filesystem::path mailspoolPath){
     string fileExtension = ".txt";
     set<string> filesSorted;
 
+    pthread_mutex_lock(&mutex);
+
     if(!filesystem::exists(userDir)){ //check if userDir exists
         sendText(socket, "0");
         sendEOF(socket);
+        pthread_mutex_unlock(&mutex);
         return;
     }
 
@@ -251,11 +255,14 @@ void List(int socket, string username, filesystem::path mailspoolPath){
                 sendERR(socket);
                 sendEOF(socket);
                 cout << "ERR: Wrong file in user directory" << endl;
+                pthread_mutex_unlock(&mutex);
                 return;
             }
             
         }       
     }
+
+    pthread_mutex_unlock(&mutex);
 
     if(id == 1){
         sendText(socket, "0");
@@ -266,6 +273,7 @@ void List(int socket, string username, filesystem::path mailspoolPath){
     }
     
     sendEOF(socket);
+    
 }
 
 void Delete(int socket, string username, filesystem::path mailspool_path){
@@ -274,12 +282,15 @@ void Delete(int socket, string username, filesystem::path mailspool_path){
     string id = ReadMsg(socket) + ".txt";
     bool deleted = false;
 
+    pthread_mutex_lock(&mutex);
+
     //Check if user exists
     if(!filesystem::exists(userDir)){
         sendERR(socket);
+        pthread_mutex_unlock(&mutex);
         return;
     }
-
+    
     for(auto const &dir_entry : filesystem::directory_iterator(userDir)){
         string name = filesystem::path(dir_entry).filename();
         if(name == id){
@@ -290,6 +301,7 @@ void Delete(int socket, string username, filesystem::path mailspool_path){
             }
         }
     }
+    pthread_mutex_unlock(&mutex);
 
     if(!deleted){
         sendERR(socket);
@@ -302,11 +314,14 @@ void Read(int socket, string username, filesystem::path mailspool_path){
     filesystem::path userDir = mailspool_path / username;
     string id = ReadMsg(socket) + ".txt";
 
+    pthread_mutex_lock(&mutex);
     //Check if user exists
     if(!filesystem::exists(userDir)){
         sendERR(socket);
+        pthread_mutex_unlock(&mutex);
         return;
     }
+    
 
     //iterate through user directory and look for the right file
     for(auto const &dir_entry : filesystem::directory_iterator(userDir))
@@ -323,14 +338,18 @@ void Read(int socket, string username, filesystem::path mailspool_path){
                     sendText(socket, text);
                 }
                 sendEOF(socket);
+                pthread_mutex_unlock(&mutex);
                 return;
             } else {
                 cerr << "couldnt open file" << endl;
                 sendERR(socket);
+                pthread_mutex_unlock(&mutex);
                 return;
             }
         }
     }
+
+    pthread_mutex_unlock(&mutex);
     
     if (!found){
         cerr << " message not found" << endl;
@@ -356,6 +375,11 @@ void* ClientHandler(void* threadargs){
     do{
         if((n=recv(((ThreadArguments*)threadargs)->socket, buffer, sizeof(buffer), 0))>0){
             username.append(buffer, buffer+n);
+
+            if(username == "QUIT"){
+                Quit(((ThreadArguments*)threadargs)->socket, "unknown");
+                break;
+            }
         }
         if((n=recv(((ThreadArguments*)threadargs)->socket, buffer, sizeof(buffer), 0))>0){
             password.append(buffer, buffer+n);
