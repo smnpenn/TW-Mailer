@@ -295,7 +295,7 @@ int main(int argc, char *argv[])
                 authorized = false;
                 if(userstr == "LOCKED"){
                     shutdown(sock, SHUT_RDWR);
-                    close(sock);
+                    // close(sock);
                     return -1;
                 }
             } else {
